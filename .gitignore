@@ -1,0 +1,11 @@
+# Runtime cache (keep .gitkeep only)
+cache/*.json
+cache/*.hash
+cache/*.flag
+
+# Python
+scripts/__pycache__/
+*.pyc
+
+# Logs
+*.log
