@@ -3,6 +3,7 @@ name: driver-audit
 description: Audit driver code for correct layering (Driver Core / Capability Boundary / OS Glue / Runtime)
 skills:
   - cross-kernel-driver
+  - superpowers:verification-before-completion
 tools:
   - Read
   - Grep

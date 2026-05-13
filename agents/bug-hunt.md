@@ -126,10 +126,13 @@ TGOSKits provides **lockdep** (lock dependency checker) through the `kspin` crat
 
 #### Enabling lockdep
 
-Add `"lockdep"` to the `features` array in the crate's `build-<arch>.toml` config file under `test-suit/`:
+Add `"lockdep"` to the `features` array in the test config:
+
+- **StarryOS**: add to `features` in the test's `qemu-<arch>.toml` (e.g., `features = ["lockdep"]`)
+- **ArceOS**: add to `features` in the crate's `build-<arch>.toml` under `test-suit/`
 
 ```toml
-features = ["ax-std", "lockdep"]
+features = ["lockdep"]
 ```
 
 This activates the lockdep infrastructure in `kspin`: every `SpinLock::lock()` / `Mutex::lock()` call is tracked, and lock ordering violations are detected at runtime.
@@ -199,8 +202,14 @@ docker run --rm -v "$PWD:/workspace" -v /tmp:/tmp -w /workspace tgoskits-ci bash
 ### Step 3: Run same test on target OS (QEMU)
 
 ```bash
+# For ArceOS (supports --package):
 docker run --rm -v "$PWD:/workspace" -w /workspace tgoskits-ci bash -c '
-  cargo xtask <os> qemu --package <test-package> --arch <arch>
+  cargo xtask arceos qemu --package <test-package> --arch <arch>
+' > /tmp/os-output.log 2>&1
+
+# For StarryOS (use test command; --package is not supported):
+docker run --rm -v "$PWD:/workspace" -w /workspace tgoskits-ci bash -c '
+  cargo xtask starry test qemu --arch <arch> -c <test-case>
 ' > /tmp/os-output.log 2>&1
 ```
 
@@ -216,9 +225,14 @@ If the target involves locks, shared state, or multi-core execution, enable lock
 
 ```bash
 # 1. Add "lockdep" feature to build config
-# 2. Re-run the QEMU test
+# 2. Re-run the QEMU test (ArceOS):
 docker run --rm -v "$PWD:/workspace" -w /workspace tgoskits-ci bash -c '
-  cargo xtask <os> qemu --package <test-package> --arch <arch>
+  cargo xtask arceos qemu --package <test-package> --arch <arch>
+' 2>&1 | tee /tmp/lockdep-output.log
+
+# Or for StarryOS (use test command; --package is not supported):
+docker run --rm -v "$PWD:/workspace" -w /workspace tgoskits-ci bash -c '
+  cargo xtask starry test qemu --arch <arch> -c <test-case>
 ' 2>&1 | tee /tmp/lockdep-output.log
 
 # 3. Check for lockdep warnings
@@ -257,13 +271,52 @@ List each discrepancy with the relevant syscall/function and the nature of the m
      timeout = 30
      ```
 
+     For SMP or stress tests (≥ 4 CPUs or > 1000 iterations), set `timeout = 60` or higher.
+
 3. **Validate on Linux:** Compile and run the test in Docker to capture expected output.
 
 ## Phase 3: FIX
 
 1. **Locate the source** of the bug — exact file and function.
 2. **Apply the fix** — minimal changes, fix only the bug, no refactoring.
-3. **Run the repro test** on the target OS and confirm output matches Linux.
+3. **Synchronization Boundary Audit** (MANDATORY for concurrency-bug fixes) — verify the fix is *complete*, not just locally correct:
+
+   #### Step 3a: Enumerate all access sites
+
+   List every code path that reads or writes the shared data protected by the fix. Include both direct access and indirect access (e.g., `Arc::clone` increments a refcount without touching the inner lock).
+
+   ```bash
+   # Example: find all sites that touch FD_TABLE's Arc lifecycle
+   grep -rn "FD_TABLE" --include="*.rs" os/StarryOS/kernel/src/
+   ```
+
+   #### Step 3b: Map synchronization primitives to each site
+
+   For each access site, identify which synchronization primitive guards it. **Critical check**: does the lock protect the *inner data* or the *outer lifecycle*? They are different layers.
+
+   | Access Site | Operation | Sync Primitive | Guards... |
+   |-------------|-----------|----------------|-----------|
+   | `close_all_fds()` | `FD_TABLE.write()` + clear | `RwLock<FlattenObjects>` | Inner fd array |
+   | `clone(CLONE_FILES)` | `Arc::clone(&FD_TABLE)` | **NONE** | — |
+   | `get_file_like()` | `FD_TABLE.read().get()` | `RwLock<FlattenObjects>` | Inner fd array |
+
+   #### Step 3c: Verify shared synchronization boundary
+
+   If two sites can race (e.g., close vs clone), they MUST pass through the same synchronization primitive. A lock on the inner data does NOT serialize `Arc::clone()` on the outer wrapper. **The fix is incomplete until both racing sites share a synchronization boundary.**
+
+   | Rule | Check |
+   |------|-------|
+   | Same primitive? | Do both paths acquire the same lock/mutex? |
+   | Same layer? | Does the lock guard the right thing (Arc lifecycle vs inner data)? |
+   | Atomic window? | Is check-and-action truly atomic given all access sites? |
+
+   #### Step 3d: Fix gaps
+
+   If any racing site does not pass through the same synchronization boundary, add the missing guard (e.g., `FD_TABLE.read()` in the clone path) or redesign the synchronization.
+
+   **Only proceed to the repro test (step 4 below) after all gaps in the audit table are resolved.**
+
+4. **Run the repro test** on the target OS and confirm output matches Linux.
 
 ## Phase 4: VERIFY
 
@@ -292,7 +345,6 @@ After a fix is committed, proceed to the PR workflow. This phase ensures every b
 ```bash
 git add <fixed-files>
 git commit -m "fix(<scope>): <description>"
-FIX_COMMIT=$(git rev-parse HEAD)  # capture for Step 5 cherry-pick
 ```
 
 The description should mention both the root cause subtype and the affected syscall/function.
@@ -332,7 +384,7 @@ For each bug fixed, use this per-bug template:
 ```markdown
 ### <N>. <One-line issue title>
 
-**Root Cause**: <logic-bug | memory-bug | validation-bug | resource-bug | data-race | atomicity-violation | order-violation | deadlock | lock-hierarchy-violation | missing-barrier | starvation | livelock>
+**Root Cause**: <logic-bug | memory-bug | validation-bug | resource-bug | data-race | atomicity-violation | order-violation | deadlock | lock-hierarchy-violation | missing-barrier | starvation | livelock | incomplete-sync-fix>
 **Manifestation**: <wrong-result | wrong-output | crash | hang | silent-corruption | leak>
 
 **Analysis**: <Root cause — which function/line, why the defect exists, what invariant was violated.>
@@ -361,11 +413,12 @@ Always create a fresh branch from upstream/dev HEAD — never submit a PR from a
 git fetch upstream dev 2>/dev/null || git fetch origin dev
 UPSTREAM_REF=$(git rev-parse upstream/dev 2>/dev/null || git rev-parse origin/dev)
 BRANCH_NAME="fix/$(echo "<scope>" | tr ' ' '-' | tr -cd 'a-zA-Z0-9/-' | tr '[:upper:]' '[:lower:]')"
+WORKING_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 git checkout -b "$BRANCH_NAME" "$UPSTREAM_REF"
 
-# 2. Cherry-pick the fix commit(s) onto the clean branch
-# Use the FIX_COMMIT hash captured in Step 1
-git cherry-pick $FIX_COMMIT
+# 2. Cherry-pick ALL fix commits (handles single or multiple commits)
+BASE=$(git merge-base "$UPSTREAM_REF" "$WORKING_BRANCH")
+git cherry-pick $BASE.."$WORKING_BRANCH"
 
 # 3. Verify CI passes on the clean branch
 bash .claude/scripts/local-ci.sh quick

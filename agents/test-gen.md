@@ -19,7 +19,7 @@ You generate test cases for TGOSKits OS components. Every test must be validated
 
 ## Global Capabilities
 
-For complex test design (multi-threaded scenarios, edge case enumeration), spawn the `test-engineer` agent to assist with coverage analysis. Before claiming test generation is complete, invoke `superpowers:verification-before-completion` — confirm every test passes on Linux (reference) and at least one target OS architecture.
+For complex test design (multi-threaded scenarios, edge case enumeration), use systematic coverage analysis — enumerate all input domains, boundary conditions, and error paths before writing any test code. Before claiming test generation is complete, invoke `superpowers:verification-before-completion` — confirm every test passes on Linux (reference) and at least one target OS architecture.
 
 For syscall documentation (parameter types, error codes, edge cases), use web search or `context7` MCP to look up Linux man-pages and POSIX specifications.
 
