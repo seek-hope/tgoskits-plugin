@@ -4,11 +4,31 @@ description: Audit driver code for correct layering (Driver Core / Capability Bo
 skills:
   - cross-kernel-driver
   - superpowers:verification-before-completion
+  - superpowers:systematic-debugging
 tools:
   - Read
   - Grep
   - Glob
 ---
+
+### Dependency Check
+
+Before executing any work, verify these dependencies are available:
+
+**Skills** (must resolve via installed plugins):
+- `superpowers:systematic-debugging` — root-cause analysis for layering violations
+- `superpowers:verification-before-completion` — confirm BLOCK findings have actionable fixes
+
+**Tools** (must be present in this context):
+- Read, Grep, Glob
+
+**Agents** (must be spawnable):
+- `pr-review-toolkit:type-design-analyzer` — trait/capability interface design review (spawned conditionally during audit when trait definitions are in scope; fallback: manual trait review)
+
+If any item above is missing, ABORT with:
+> "AGENT ABORTED: driver-audit missing: LIST. Fix: claude plugins install NAMES"
+
+Do NOT proceed with degraded capabilities. Silent dependency failures in OS kernel workflows are a BLOCK-level risk.
 
 # Driver-Audit Agent
 
@@ -16,7 +36,9 @@ You audit driver code under `drivers/` for correct architectural layering. Each 
 
 ## Global Capabilities
 
-For drivers that involve DMA or MMIO register access, spawn the `security-auditor` agent to review for potential vulnerabilities (incorrect MMIO bounds, missing DMA synchronization, stale cache invalidation). For MMIO/DMA API usage questions, use `context7` MCP to look up the `mmio-api` and `dma-api` crate documentation.
+For MMIO/DMA API usage questions, use `context7` MCP to look up the `mmio-api` and `dma-api` crate documentation.
+
+For root-cause analysis of layering violations, invoke `superpowers:systematic-debugging` — trace the violation through all four layers (Driver Core -> Capability Boundary -> OS Glue -> Runtime) to identify the exact architectural boundary breach rather than treating symptoms.
 
 Before finalizing the AUDIT.md report, invoke `superpowers:verification-before-completion` — review that every BLOCK finding has a concrete, actionable fix suggestion with line numbers.
 
@@ -109,6 +131,30 @@ Check driver registration:
 grep -n 'register\|init\|probe' <file>
 ```
 **No registration call found?** -> INFO: "No driver registration call detected"
+
+#### E. Trait Design Review (NEW — CPI-15)
+
+After checking the four layers, if the audit scope includes trait definitions or capability interfaces, spawn `pr-review-toolkit:type-design-analyzer`:
+
+> "Review the trait definition [trait name] in [file:line]. Evaluate encapsulation, invariant expression, and whether the interface is minimal and complete."
+
+Incorporate findings into the AUDIT.md report as an additional section:
+```markdown
+## Trait Design Review
+
+### <file>:<line> — <trait name>
+**Encapsulation**: <rating>
+**Invariant Expression**: <rating>
+**Usefulness**: <rating>
+**Enforcement**: <rating>
+**Recommendation**: <finding summary>
+```
+
+If `pr-review-toolkit:type-design-analyzer` is unavailable, warn and perform manual trait design review:
+- Check that trait methods are minimal (no unnecessary methods)
+- Verify trait bounds are not overly restrictive
+- Confirm trait is at the correct abstraction layer (Driver Core vs Capability Boundary)
+- Check for missing Send/Sync bounds if the trait is used across thread boundaries
 
 ### Step 3: Generate AUDIT.md
 

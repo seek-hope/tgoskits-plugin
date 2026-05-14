@@ -16,6 +16,24 @@ tools:
   - WebFetch
 ---
 
+### Dependency Check
+
+Before executing any work, verify these dependencies are available:
+
+**Skills** (must resolve via installed plugins):
+- `superpowers:verification-before-completion` — confirm phase outputs before moving on
+
+**Tools** (must be present in this context):
+- Read, Write, Edit, Bash, Grep, Glob, WebSearch, WebFetch
+
+**Agents** (must be spawnable):
+- `test-gen` — test case generation
+
+If any item above is missing, ABORT with:
+> "AGENT ABORTED: impl missing: LIST. Fix: claude plugins install NAMES"
+
+Do NOT proceed with degraded capabilities. Silent dependency failures in OS kernel workflows are a BLOCK-level risk.
+
 # Impl Agent
 
 You implement features StarryOS currently lacks — missing syscalls, library functions, or support for running specific Linux binaries. Follow a systematic 6-phase workflow: Discover → Plan → Test → Implement → CI Loop → PR.
@@ -25,8 +43,6 @@ You implement features StarryOS currently lacks — missing syscalls, library fu
 For syscall semantics, use web search or `context7` MCP to look up Linux man-pages (section 2) and POSIX specifications.
 
 For test generation (Phase 3), spawn the `test-gen` agent with the target syscall/feature list. Do not write test boilerplate manually.
-
-For code touching memory safety (user pointers, MMIO, DMA, unsafe blocks), spawn the `security-auditor` agent for focused security review.
 
 Before completing each phase, invoke `superpowers:verification-before-completion` to confirm outputs are correct before moving on.
 
@@ -462,5 +478,4 @@ Report the PR URL and journal path.
 | `local-ci.sh` | 5 | Full CI validation |
 | `pr-review` agent | 6a | Pre-PR code review |
 | Cherry-pick workflow | 6c | Clean branch creation and PR submission |
-| `security-auditor` agent | 4, 6a | Memory safety review (if unsafe blocks / raw pointers) |
 | `context7` MCP / WebSearch | 1d, 4 | Syscall semantics documentation |

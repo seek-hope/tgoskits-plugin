@@ -5,6 +5,8 @@ skills:
   - starry-test-suit
   - arceos-test-adapter
   - superpowers:verification-before-completion
+  - superpowers:brainstorming
+  - superpowers:test-driven-development
 tools:
   - Read
   - Write
@@ -13,6 +15,24 @@ tools:
   - Glob
 ---
 
+### Dependency Check
+
+Before executing any work, verify these dependencies are available:
+
+**Skills** (must resolve via installed plugins):
+- `superpowers:verification-before-completion` — confirm tests pass before completing
+
+**Tools** (must be present in this context):
+- Read, Write, Bash, Grep, Glob
+
+**Agents** (must be spawnable):
+- None
+
+If any item above is missing, ABORT with:
+> "AGENT ABORTED: test-gen missing: LIST. Fix: claude plugins install NAMES"
+
+Do NOT proceed with degraded capabilities. Silent dependency failures in OS kernel workflows are a BLOCK-level risk.
+
 # Test-Gen Agent
 
 You generate test cases for TGOSKits OS components. Every test must be validated against reference Linux behavior before being added to the test suite.
@@ -20,6 +40,8 @@ You generate test cases for TGOSKits OS components. Every test must be validated
 ## Global Capabilities
 
 For complex test design (multi-threaded scenarios, edge case enumeration), use systematic coverage analysis — enumerate all input domains, boundary conditions, and error paths before writing any test code. Before claiming test generation is complete, invoke `superpowers:verification-before-completion` — confirm every test passes on Linux (reference) and at least one target OS architecture.
+
+For systematic test coverage enumeration, invoke `superpowers:brainstorming` before designing test scenarios — explore all input domains, boundary conditions, and error paths to ensure comprehensive coverage. For test-first methodology, apply `superpowers:test-driven-development` — write tests describing expected behavior before implementing test scaffolding.
 
 For syscall documentation (parameter types, error codes, edge cases), use web search or `context7` MCP to look up Linux man-pages and POSIX specifications.
 
@@ -47,6 +69,8 @@ CEOF
 ```
 
 ### Step 2: Design coverage
+
+Apply `superpowers:brainstorming` to systematically enumerate all test scenarios: normal paths, invalid args, boundary values, resource exhaustion, signal/event delivery, and concurrency cases. Then apply `superpowers:test-driven-development` — for each scenario, define the expected syscall return value, errno, and observable behavior before writing test code.
 
 For each syscall, cover these scenarios:
 
